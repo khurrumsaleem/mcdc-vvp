@@ -59,14 +59,15 @@ Create the local launch configuration:
 cp configs/launch_config.py.template configs/launch_config.py
 ```
 
-Edit `configs/launch_config.py` to enable the desired suites and set their platform and launch options.
-Use `platform=None` for local execution or a name from `configs/platform_config.py` for HPC execution.
-For HPC execution, `N_node` sets the number of nodes and each node uses all available CPU cores.
+Edit `configs/launch_config.py` to enable the desired suites and set their platforms and launch options.
+Every suite defines a `platforms` list containing `"local"` and/or names from `configs/platform_config.py`.
+The list identifies the platforms on which that suite may be launched; it does not submit work to another machine.
+For HPC execution, `N_node` sets the number of nodes and each node uses all available resources.
 The parallel-performance suite instead uses `N_node_max` to generate every power-of-two node count through that value.
-It accepts a platform list such as `"platform": ["dane", "tuolumne"]`, isolates each platform's outputs, and uses all GPUs on GPU-equipped platforms or all CPU cores on CPU-only platforms.
+Both performance suites preserve platform identity in their outputs and processed results.
+Parallel performance uses all GPUs on GPU-equipped platforms or all CPU cores on CPU-only platforms.
 For HPC execution, a suite's base `walltime` in hours is scaled by each case's `walltime_factor` in that suite's `task.yaml`.
 The scaled value is rounded up to the scheduler's supported resolution, the platform maximum remains the final limit, and local execution ignores walltime settings.
-Run the top-level `python cleanup.py` before launching when the entire configured campaign should start fresh.
 
 ### User configuration
 
@@ -76,7 +77,7 @@ For HPC execution, also create `configs/user_config.py` from its template and pr
 
 ### Launching suites
 
-Launch locally enabled suites configured with `platform=None`:
+Launch enabled suites whose `platforms` list contains `"local"`:
 
 ```bash
 python launch.py
@@ -88,8 +89,8 @@ Launch enabled suites configured for a specific HPC platform:
 python launch.py --platform tuolumne
 ```
 
-The `--platform` option selects suites with a matching configured platform.
-For parallel performance, it selects membership in the configured platform list; run the command separately on each target machine rather than submitting remotely.
+The `--platform` option selects enabled suites whose configured `platforms` list contains that value.
+Run the command separately on each target machine.
 
 ### Processing results
 
@@ -101,10 +102,19 @@ python process.py
 
 For each suite registered in `configs/launch_config.py`, the top-level processor invokes the suite processor when a Maestro run is available and then moves the generated `results/` directory under the same suite path in the top-level `results/` directory.
 An existing suite `results/` directory can still be collected when no Maestro run is present, and suites with neither are skipped.
-The SINBAD suite additionally requires `sinbad_root` in `configs/launch_config.py` so its processor can read the locally available licensed experimental tables.
-Within each suite, `convergence/` contains study-wide convergence figures and `comparison/` contains plots or animations from the largest-statistics result.
-These directories apply to verification; parallel performance instead combines the latest saved study per platform under `results/<comparison>/`, as described in its suite README.
-Collecting a suite results replaces that suite's existing top-level ones.
+Some suite processors require additional local configuration, such as data-directory paths or environment variables; consult the suite README before processing its results.
+Collecting a suite's results replaces that suite's existing top-level results.
+
+### Cleaning generated results
+
+Remove generated case outputs and processed results from every registered suite:
+
+```bash
+python cleanup.py
+```
+
+Run cleanup before launching when the entire configured campaign should start fresh.
+It removes Maestro run directories and retains reference data.
 
 ### Preparing release assets
 
@@ -116,14 +126,6 @@ python prepare_release.py
 
 The script recreates `release/`, copies every figure from `results/`, and replaces each directory boundary in its relative path with `--` to form a unique flat asset name.
 The structured files in `results/` are not modified.
-
-Remove generated case outputs and processed results from every registered suite:
-
-```bash
-python cleanup.py
-```
-
-Cleanup removes Maestro run directories and retains reference data.
 
 ## Suites
 
@@ -173,8 +175,22 @@ For parallel runs on $P$ nodes, tracking rate and FOM are reported per node as $
 | [Serial](performance/serial/README.md) | Single-process Python and Numba studies. |
 | [Parallel](performance/parallel/README.md) | Full-node Numba strong- and weak-scaling studies. |
 
+#### Notional performance illustrations
+
+The following schematic plots illustrate the intended presentation of the parallel-performance metrics; their relative heights and trends are intentional, but the values are not simulation data or predictions for any platform or transport method.
+
+![Notional tracking-rate and FOM performance envelopes for synthetic CPU and GPU configurations.](performance/design/figures/performance_curves.png)
+
+![Notional performance-level and scaling-evidence summary at common histories-per-node workloads.](performance/design/figures/scaling_summary.png)
+
+The complete performance envelopes show how tracking rate and FOM per node vary with total histories, exposing startup overhead, workload saturation, and differences among node counts.
+For each platform-method combination, the node-count curves converge to a common asymptotic level.
+A vertical slice through the node-count curves at fixed total histories gives a direct strong-scaling comparison; ideal per-node performance aligns the intersections, while greater downward separation as the node count grows indicates reduced strong-scaling efficiency.
+For weak scaling, compare points at fixed histories per node; ideal per-node performance places those points on a horizontal line, while a downward departure as the node count grows indicates reduced weak-scaling efficiency.
+
 Parallel results pair a detailed **Performance envelope** with a **Performance level + scaling evidence** summary at common histories-per-node workloads.
 The summary compares weak scaling to the left of its main bar and workload sensitivity, as indirect strong-scaling evidence, to its right.
+A substantial drop from the left wing toward the main bar indicates poor weak-scaling efficiency; a substantial drop from the main bar toward the right indicates sensitivity to decreasing work per node and warns of poor strong-scaling efficiency.
 Interpolation is marked and restricted to measured ranges; the envelope indicates whether the selected level is near saturation.
 
 ## Documentation
